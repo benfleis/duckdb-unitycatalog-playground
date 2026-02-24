@@ -32,6 +32,7 @@ def generatePets(batchSize: Int = 10): Iterator[Seq[Pets]] = {
 }
 
 // 4. Create a new Delta table, returning the builder for the caller to .execute()
+// This doesn't work at the moment. The Catalog Managed Tables are new and the initial interface is SQL for create
 def createDeltaTable(
   tableName:  String,
   schema:     StructType,

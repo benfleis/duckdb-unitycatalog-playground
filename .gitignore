@@ -210,3 +210,6 @@ __marimo__/
 metastore_db/
 derby.log
 *.checkpoint
+spark-warehouse/
+
+.DS_Store

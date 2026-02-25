@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.20.1"
+__generated_with = "0.20.2"
 app = marimo.App(width="medium")
 
 
@@ -268,7 +268,6 @@ def _(generate_pets):
 def _(pets):
     # we'll fetch the first batch and use it to create our new Table
     litter_one = next(pets, None)
-
     return (litter_one,)
 
 
@@ -474,6 +473,25 @@ def _(mo, spark: "SparkSession"):
 
     # view history
     mo.ui.table(dt.history())
+    return (dt,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Limitations
+    At this point in time there are some limitations when using Catalog Managed Tables given this feature is still experimental.
+
+    1. `DeltaTableBuilder` will fail to generate a new Catalog Managed Table. This is a known limitation and we're working on support.
+    2. Vacuum Support - `DeltaTable.forName(spark, "unity.sanctuary.pets").vacuum()` will fail with `UnsupportedOperationException` **[DELTA_UNSUPPORTED_VACUUM_ON_MANAGED_TABLE]**.
+    """)
+    return
+
+
+@app.cell
+def _(dt):
+    # this will fail at this point in time (Delta 4.1 with Unity Catalog 0.4.0)
+    dt.vacuum()
     return
 
 

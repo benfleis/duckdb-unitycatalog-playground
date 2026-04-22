@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Setup: confirm OSS Unity Catalog is running, create unity.my_schema,
+# and create unity.my_schema.pets as a writable Delta table for the write demo.
+#
+# Prerequisites:
+#   docker compose up -d  (in unitycatalog-playground/)
+#
+# Environment variables:
+#   UC_ENDPOINT  (default: http://localhost:8080)
+
+set -euo pipefail
+
+UC="${UC_ENDPOINT:-http://localhost:8080}"
+CATALOG="unity"
+SCHEMA="my_schema"
+BASE="file:///home/unitycatalog/etc/data/external/${CATALOG}/${SCHEMA}/tables"
+
+# --- 1. Wait for UC to be healthy --------------------------------------------
+echo "--- Waiting for Unity Catalog at ${UC} ---"
+for i in $(seq 1 20); do
+    if curl -sf "${UC}/api/2.1/unity-catalog/catalogs" >/dev/null 2>&1; then
+        echo "  UC is up"
+        break
+    fi
+    [ $i -eq 20 ] && {
+        echo "  timed out"
+        exit 1
+    }
+    sleep 1
+done
+
+# --- 2. Create my_schema (idempotent) ----------------------------------------
+echo ""
+echo "--- Ensuring schema ${CATALOG}.${SCHEMA} ---"
+curl -sf -X POST "${UC}/api/2.1/unity-catalog/schemas" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"${SCHEMA}\",\"catalog_name\":\"${CATALOG}\"}" |
+    jq '{name,catalog_name}' &&
+    echo "  created" || echo "  (already exists)"
+
+# --- 3. Create pets table -----------------------------------------------------
+echo ""
+echo "--- Creating ${CATALOG}.${SCHEMA}.pets ---"
+
+# Clean up UC metadata
+docker exec unitycatalog /home/unitycatalog/bin/uc table delete \
+    --full_name "${CATALOG}.${SCHEMA}.pets" 2>/dev/null || true
+
+# Clean up any leftover data (and any stale 'file:' junk dir)
+docker exec unitycatalog rm -rf \
+    "/home/unitycatalog/etc/data/external/${CATALOG}/${SCHEMA}/tables/pets" \
+    "/home/unitycatalog/etc/data/file:"
+
+docker exec unitycatalog /home/unitycatalog/bin/uc table create \
+    --full_name "${CATALOG}.${SCHEMA}.pets" \
+    --columns "uuid STRING, name STRING, age INT, adopted BOOLEAN" \
+    --format DELTA \
+    --storage_location "${BASE}/pets" \
+    --output json |
+    jq '{name,table_type,storage_location}'
+
+# Seed one row via DuckDB inside the container (paths resolve correctly there)
+docker exec -i duckdb-playground duckdb -unsigned <<EOF
+LOAD delta;
+ATTACH '/home/unitycatalog/etc/data/external/${CATALOG}/${SCHEMA}/tables/pets' AS pets (TYPE delta);
+INSERT INTO pets (uuid, name, age, adopted) VALUES (gen_random_uuid()::VARCHAR, 'Seed', 1, false);
+SELECT count() AS seeded FROM pets;
+EOF
+
+echo ""
+echo "Done."

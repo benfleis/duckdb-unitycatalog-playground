@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Write demo: insert rows into unity.default.pets via OSS Unity Catalog.
+#
+# Prerequisites: run 04-uc-oss-setup first.
+
+set -euo pipefail
+
+echo "--- OSS Unity Catalog: writes via DuckDB ---"
+docker exec -i duckdb-playground duckdb -unsigned <<'EOF'
+LOAD delta;
+LOAD unity_catalog;
+CREATE SECRET (TYPE unity_catalog, TOKEN 'demo-ignored-token', ENDPOINT 'http://unitycatalog:8080/');
+ATTACH 'unity' AS my_catalog (TYPE unity_catalog, DEFAULT_SCHEMA 'my_schema');
+
+INSERT INTO my_catalog.pets (uuid, name, age, adopted)
+SELECT
+    gen_random_uuid()::VARCHAR,
+    ['Luna','Milo','Bella','Charlie','Max','Lucy','Cooper','Daisy','Buddy','Lily',
+     'Rocky','Molly','Bear','Lola','Duke','Sadie','Tucker','Zoe','Oliver','Stella'][1 + (random() * 19)::INT],
+    (1 + (random() * 14)::INT)::INT,
+    random() > 0.5
+FROM range(10);
+
+SELECT count() AS total_rows FROM my_catalog.pets;
+EOF

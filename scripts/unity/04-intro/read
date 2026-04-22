@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Read demo: attach OSS Unity Catalog and query the pets table.
+#
+# Prerequisites: run 04-uc-oss-setup first.
+
+set -euo pipefail
+
+echo "--- OSS Unity Catalog: reads via DuckDB ---"
+docker exec -i duckdb-playground duckdb -unsigned <<'EOF'
+LOAD delta;
+LOAD unity_catalog;
+CREATE SECRET (TYPE unity_catalog, TOKEN 'demo-ignored-token', ENDPOINT 'http://unitycatalog:8080/');
+ATTACH 'unity' AS my_catalog (TYPE unity_catalog, DEFAULT_SCHEMA 'my_schema');
+SELECT name, age, adopted FROM my_catalog.pets ORDER BY name LIMIT 3;
+EOF

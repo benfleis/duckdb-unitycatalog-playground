@@ -5,10 +5,13 @@ description = "A marimo notebook playground for exploring Unity Catalog"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "delta-spark==4.1.0",
-    "marimo[recommended]>=0.20.1",
-    "nbconvert>=7.17.0",
-    "numpy>=2.2.6",
-    "playwright>=1.58.0",
-    "pyspark==4.1.1",
+  "delta-spark==4.1.0",
+  "deltalake==1.5.1",
+  "duckdb>=1.5.2",
+  "marimo[recommended]>=0.20.1",
+  "nbconvert>=7.17.0",
+  "numpy>=2.2.6",
+  "playwright>=1.58.0",
+  "pyarrow==24.0.0",
+  "pyspark==4.1.1",
 ]

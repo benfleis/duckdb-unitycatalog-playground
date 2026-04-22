@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+# Spawn concurrent CMC writers. Run in parallel via xargs:
+seq 1 20 | xargs -P 8 -I{} scripts/unity/05-cmc/write-single {}

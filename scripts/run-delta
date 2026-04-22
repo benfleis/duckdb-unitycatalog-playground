@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -e
+
+[[ -d "/opt/workspace/scripts" ]] && IN_DOCKER=1
+
+## setup env; Override as needed
+: ${DUCKDB_BIN:=duckdb}
+: ${DATA_PATH:=data}
+mkdir -p "$DATA_PATH"
+
+## Set these for all the scripts; DATA_PATH needs to be absolute
+export DUCKDB_BIN
+export DATA_PATH="$(
+    cd "$DATA_PATH"
+    pwd
+)"
+
+run() {
+    echo "====== Running $1 ======"
+    "$@"
+    echo
+    echo
+}
+
+## these can be run with plain ol' duckdb (v1.5.0+)
+run scripts/delta/01-insert/setup
+run scripts/delta/01-insert/run
+run scripts/delta/02-timetravel/run
+
+## incremental snapshots > v1.5.2, aka nighties
+run scripts/delta/03-incrsnap/setup
+run scripts/delta/03-incrsnap/run

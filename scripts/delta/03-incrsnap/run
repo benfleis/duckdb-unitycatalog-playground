@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DUCKDB_BIN="${DUCKDB_BIN:-duckdb}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+DATA_PATH="${DATA_PATH:-$REPO_ROOT/data}"
+TABLE_PATH="$DATA_PATH/blog/incremental_example"
+
+# Single session: logging state (duckdb_logs) is not persisted across connections
+"$DUCKDB_BIN" <<SQL
+LOAD delta;
+
+SELECT '--- Load v16 (cold) ---' AS label;
+ATTACH '$TABLE_PATH' AS t (TYPE delta, VERSION 16);
+SELECT count() FROM t;
+SELECT IF(count() = 17,
+    printf('  ✅ row count at v16: %d', count()),
+    printf('  ❌ row count at v16: expected 17, got %d', count())
+) AS label FROM t;
+
+SET enable_logging = true;
+SET delta_kernel_logging = true;
+CALL enable_logging('DeltaKernel', level = 'trace');
+
+SELECT '--- Load v20 (incremental from v16: only applies commits 17-20) ---' AS label;
+DETACH t;
+ATTACH '$TABLE_PATH' AS t (TYPE delta, VERSION 20);
+SELECT count() FROM t;
+SELECT IF(count() = 21,
+    printf('  ✅ row count at v20: %d', count()),
+    printf('  ❌ row count at v20: expected 21, got %d', count())
+) AS label FROM t;
+
+-- Zero matches means the cached v16 snapshot was extended incrementally, not rebuilt.
+SELECT count() FROM duckdb_logs
+WHERE type = 'DeltaKernel'
+  AND message LIKE '%00000000000000000%.json%';
+SQL

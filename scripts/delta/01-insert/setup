@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""
+Create (or replace) the Delta table used for the INSERT blog example.
+
+Schema: text VARCHAR, code BIGINT
+Output: $DATA_PATH/blog/insert_example
+"""
+
+import os
+import shutil
+import pyarrow as pa
+from deltalake import write_deltalake
+
+_script_dir = os.path.dirname(os.path.realpath(__file__))
+_data_path = os.environ.get("DATA_PATH") or os.path.join(_script_dir, "../../../data")
+output_path = os.path.realpath(os.path.join(_data_path, "blog/insert_example"))
+
+if os.path.isdir(output_path):
+    shutil.rmtree(output_path)
+
+schema = pa.schema(
+    [
+        pa.field("text", pa.string(), nullable=False),
+        pa.field("code", pa.int64(), nullable=False),
+    ]
+)
+
+table = pa.table({"text": ["Question 1"], "code": [1]}, schema=schema)
+write_deltalake(output_path, table, mode="overwrite")
+
+print(f"Written to {output_path}")
+print(table.to_pandas().to_string(index=False))

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Single concurrent CMC writer. Run in parallel via xargs:
+#
+#   seq 1 20 | xargs -P 8 -I{} scripts/05-cmc-oss-worker {}
+#
+# Each worker attaches UC, inserts 5 rows, and reports success or commit conflict.
+# UC arbitrates concurrent commits: one writer per version wins, the rest get a
+# conflict error. All successful inserts land; no data is lost or duplicated.
+
+WORKER_ID="${1:-?}"
+
+NAMES="['Luna','Milo','Bella','Charlie','Max','Lucy','Cooper','Daisy','Buddy','Lily',\
+'Rocky','Molly','Bear','Lola','Duke','Sadie','Tucker','Zoe','Oliver','Stella']"
+
+output=$(
+    docker exec -i duckdb-playground duckdb -unsigned 2>&1 <<EOF
+LOAD delta;
+LOAD unity_catalog;
+CREATE SECRET (
+    TYPE     unity_catalog,
+    TOKEN    'demo-ignored-token',
+    ENDPOINT 'http://unitycatalog:8080/'
+);
+ATTACH 'unity' AS my_catalog (TYPE unity_catalog, DEFAULT_SCHEMA 'my_schema');
+
+INSERT INTO my_catalog.concurrent_tbl
+SELECT
+    gen_random_uuid()::VARCHAR,
+    ${NAMES}[1 + (random() * 19)::INT],
+    (1 + (random() * 14)::INT)::INT,
+    random() > 0.5
+FROM range(5);
+EOF
+)
+
+if echo "$output" | grep -qi "conflict"; then
+    echo "[worker ${WORKER_ID}] CONFLICT — another writer won this version, retry needed"
+elif echo "$output" | grep -qi "error\|exception"; then
+    echo "[worker ${WORKER_ID}] ERROR"
+    exit 1
+else
+    echo "[worker ${WORKER_ID}] OK — inserted 5 rows"
+fi

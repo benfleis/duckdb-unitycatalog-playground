@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Verify CMC table state: row count via DuckDB and table info via UC REST API.
+#
+# Environment variables:
+#   UC_ENDPOINT  (default: http://localhost:8080)
+
+set -euo pipefail
+
+UC="${UC_ENDPOINT:-http://localhost:8080}"
+CATALOG="unity"
+SCHEMA="my_schema"
+TABLE="concurrent_tbl"
+
+echo "--- DuckDB: row count ---"
+docker exec -i duckdb-playground duckdb -unsigned <<'EOF'
+LOAD delta;
+LOAD unity_catalog;
+CREATE SECRET (
+    TYPE     unity_catalog,
+    TOKEN    'demo-ignored-token',
+    ENDPOINT 'http://unitycatalog:8080/'
+);
+ATTACH 'unity' AS my_catalog (TYPE unity_catalog, DEFAULT_SCHEMA 'my_schema');
+
+SELECT count() AS total_rows FROM my_catalog.concurrent_tbl;
+EOF
+
+echo ""
+echo "--- UC REST: table properties ---"
+curl -s "${UC}/api/2.1/unity-catalog/tables/${CATALOG}.${SCHEMA}.${TABLE}" |
+    jq '{storage_location, table_id, properties}'

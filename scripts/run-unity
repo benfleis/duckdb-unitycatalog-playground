@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -e
+
+## setup env; Override as needed
+: ${DATA_PATH:=data}
+mkdir -p "$DATA_PATH"
+
+## Set these for all the scripts; DATA_PATH needs to be absolute
+export DATA_PATH="$(
+    cd "$DATA_PATH"
+    pwd
+)"
+
+run() {
+    echo "====== Running $1 ======"
+    "$@"
+    echo
+    echo
+}
+
+## and Unity Catalog runs via docker
+run scripts/unity/04-intro/setup
+run scripts/unity/04-intro/write
+run scripts/unity/04-intro/read
+run scripts/unity/04-intro/verify
+
+run scripts/unity/05-cmc/setup
+run scripts/unity/05-cmc/write-concurrent
+run scripts/unity/05-cmc/verify

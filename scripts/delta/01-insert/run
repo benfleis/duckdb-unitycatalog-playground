@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+DUCKDB_BIN="${DUCKDB_BIN:-duckdb}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+DATA_PATH="${DATA_PATH:-$REPO_ROOT/data}"
+TABLE_PATH="$DATA_PATH/blog/insert_example"
+
+ATTACH="ATTACH '$TABLE_PATH' AS my_table (TYPE delta);"
+
+dshow() { "$DUCKDB_BIN" -c "$ATTACH $1"; }
+dval() { "$DUCKDB_BIN" -csv -noheader -c "$ATTACH $1"; }
+
+assert_eq() {
+  local label="$1" actual="$2" expected="$3"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "  ❌ $label: expected '$expected', got '$actual'" >&2
+    exit 1
+  fi
+  echo "  ✅ $label: '$actual'"
+}
+
+echo "--- Initial table (Question 1 only) ---"
+dshow "FROM my_table ORDER BY code;"
+assert_eq "row count" "$(dval 'SELECT count() FROM my_table;')" "1"
+assert_eq "row 0" "$(dval "SELECT text || '|' || code::VARCHAR FROM my_table WHERE code = 1;")" "Question 1|1"
+
+echo "--- INSERT: Question 2 + The Answer (=> v1) ---"
+dshow "INSERT INTO my_table VALUES ('Question 2', 2), ('The Answer', 42); FROM my_table ORDER BY code;"
+assert_eq "row count" "$(dval 'SELECT count() FROM my_table;')" "3"
+assert_eq "row 0" "$(dval "SELECT text || '|' || code::VARCHAR FROM my_table WHERE code = 1;")" "Question 1|1"
+assert_eq "row 1" "$(dval "SELECT text || '|' || code::VARCHAR FROM my_table WHERE code = 2;")" "Question 2|2"
+assert_eq "row 2" "$(dval "SELECT text || '|' || code::VARCHAR FROM my_table WHERE code = 42;")" "The Answer|42"
+
+echo "--- INSERT ... FROM: bulk copy with offset codes (=> v2) ---"
+dshow "INSERT INTO my_table FROM (SELECT text || ' (copy)', code + 100 FROM my_table); FROM my_table ORDER BY code;"
+assert_eq "row count" "$(dval 'SELECT count() FROM my_table;')" "6"
+assert_eq "row 3" "$(dval "SELECT text || '|' || code::VARCHAR FROM my_table WHERE code = 101;")" "Question 1 (copy)|101"
+assert_eq "row 4" "$(dval "SELECT text || '|' || code::VARCHAR FROM my_table WHERE code = 102;")" "Question 2 (copy)|102"
+assert_eq "row 5" "$(dval "SELECT text || '|' || code::VARCHAR FROM my_table WHERE code = 142;")" "The Answer (copy)|142"

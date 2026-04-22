@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Verify OSS UC state: row counts via DuckDB and table list via UC REST API.
+#
+# Environment variables:
+#   UC_ENDPOINT  (default: http://localhost:8080)
+
+set -euo pipefail
+
+UC="${UC_ENDPOINT:-http://localhost:8080}"
+
+echo "--- UC REST: tables in unity.default ---"
+curl -s "${UC}/api/2.1/unity-catalog/tables?catalog_name=unity&schema_name=default" |
+    jq -r '.tables[] | "  \(.name)  (\(.data_source_format))"'
+
+echo ""
+echo "--- DuckDB: row counts ---"
+docker exec -i duckdb-playground duckdb -unsigned <<'EOF'
+LOAD delta;
+LOAD unity_catalog;
+CREATE SECRET (TYPE unity_catalog, TOKEN 'demo-ignored-token', ENDPOINT 'http://unitycatalog:8080/');
+ATTACH 'unity' AS my_catalog (TYPE unity_catalog, DEFAULT_SCHEMA 'my_schema');
+
+SELECT count() AS total_rows FROM my_catalog.pets;
+EOF

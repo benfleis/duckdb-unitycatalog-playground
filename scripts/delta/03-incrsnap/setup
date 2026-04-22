@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""
+Generate a Delta table with 21 versions (v0 through v20) for the incremental snapshot demo.
+
+v0:  initial row
+v1-v20: one appended row each
+
+Output: $DATA_PATH/blog/incremental_example
+"""
+
+import os
+import shutil
+import pyarrow as pa
+from deltalake import write_deltalake
+
+_script_dir = os.path.dirname(os.path.realpath(__file__))
+_data_path = os.environ.get("DATA_PATH") or os.path.join(_script_dir, "../../../data")
+output_path = os.path.realpath(os.path.join(_data_path, "blog/incremental_example"))
+
+if os.path.isdir(output_path):
+    shutil.rmtree(output_path)
+
+schema = pa.schema(
+    [
+        pa.field("version", pa.int64()),
+        pa.field("value", pa.string()),
+    ]
+)
+
+for i in range(21):
+    table = pa.table({"version": [i], "value": [f"row_{i}"]}, schema=schema)
+    mode = "overwrite" if i == 0 else "append"
+    write_deltalake(output_path, table, mode=mode)
+    print(f"wrote v{i}")
+
+print(f"\nDone: {output_path} has versions 0–20")

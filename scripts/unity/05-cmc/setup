@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Setup: create unity.my_schema.concurrent_tbl as a CMC-enabled Delta table
+# and seed 10 rows.
+#
+# Strategy:
+#   1. bin/uc table create  — registers columns in UC + initialises Delta log
+#   2. Spark ALTER TABLE    — enables delta.feature.catalogManaged (CMC)
+#   3. DuckDB INSERT        — seeds initial rows
+#
+# Prerequisites:
+#   docker compose up -d  (in unitycatalog-playground/)
+
+set -euo pipefail
+
+UC="${UC_ENDPOINT:-http://localhost:8080}"
+CATALOG="unity"
+SCHEMA="my_schema"
+TABLE="concurrent_tbl"
+BASE="file:///home/unitycatalog/etc/data/external/${CATALOG}/${SCHEMA}/tables"
+
+# --- 1. Ensure schema exists --------------------------------------------------
+echo "--- Ensuring schema ${CATALOG}.${SCHEMA} ---"
+curl -sf -X POST "${UC}/api/2.1/unity-catalog/schemas" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"${SCHEMA}\",\"catalog_name\":\"${CATALOG}\"}" \
+    >/dev/null 2>&1 && echo "  created" || echo "  (already exists)"
+
+# --- 2. Create table via bin/uc (registers columns + Delta log) ---------------
+echo ""
+echo "--- Creating ${CATALOG}.${SCHEMA}.${TABLE} ---"
+
+docker exec unitycatalog /home/unitycatalog/bin/uc table delete \
+    --full_name "${CATALOG}.${SCHEMA}.${TABLE}" 2>/dev/null || true
+
+docker exec unitycatalog rm -rf \
+    "/home/unitycatalog/etc/data/external/${CATALOG}/${SCHEMA}/tables/${TABLE}"
+
+docker exec unitycatalog /home/unitycatalog/bin/uc table create \
+    --full_name "${CATALOG}.${SCHEMA}.${TABLE}" \
+    --columns "uuid STRING, name STRING, age INT, adopted BOOLEAN" \
+    --format DELTA \
+    --storage_location "${BASE}/${TABLE}" \
+    --output json |
+    jq '{name, table_type, storage_location}'
+
+# --- 3. Enable CMC via Spark ALTER TABLE --------------------------------------
+echo ""
+echo "--- Enabling CMC via Spark ---"
+docker exec duckdb-playground python3 - <<EOF
+from pyspark.conf import SparkConf
+from pyspark.sql import SparkSession
+
+UC_ENDPOINT   = "http://unitycatalog:8080"
+DELTA_VERSION = "4.1.0"
+UC_VERSION    = "0.4.0"
+CATALOG       = "unity"
+
+conf = (
+    SparkConf()
+    .setMaster("local[*]")
+    .setAppName("duckdb-cmc-setup")
+    .set("spark.jars.packages",
+         f"io.delta:delta-spark_4.1_2.13:{DELTA_VERSION},"
+         f"io.unitycatalog:unitycatalog-spark_2.13:{UC_VERSION}")
+    .set("spark.sql.extensions",            "io.delta.sql.DeltaSparkSessionExtension")
+    .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+    .set(f"spark.sql.catalog.{CATALOG}",            "io.unitycatalog.spark.UCSingleCatalog")
+    .set(f"spark.sql.catalog.{CATALOG}.uri",   UC_ENDPOINT)
+    .set(f"spark.sql.catalog.{CATALOG}.token", "")
+)
+spark = SparkSession.builder.config(conf=conf).getOrCreate()
+spark.sparkContext.setLogLevel("WARN")
+
+spark.sql("ALTER TABLE unity.my_schema.concurrent_tbl SET TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')")
+print("  CMC enabled")
+EOF
+
+# --- 4. Seed rows via DuckDB --------------------------------------------------
+echo ""
+echo "--- Seeding initial rows ---"
+docker exec -i duckdb-playground duckdb -unsigned <<'EOF'
+LOAD delta;
+LOAD unity_catalog;
+CREATE SECRET (
+    TYPE     unity_catalog,
+    TOKEN    'demo-ignored-token',
+    ENDPOINT 'http://unitycatalog:8080/'
+);
+ATTACH 'unity' AS my_catalog (TYPE unity_catalog, DEFAULT_SCHEMA 'my_schema');
+
+INSERT INTO my_catalog.concurrent_tbl
+SELECT
+    gen_random_uuid()::VARCHAR,
+    ['Luna','Milo','Bella','Charlie','Max','Lucy','Cooper','Daisy','Buddy','Lily',
+     'Rocky','Molly','Bear','Lola','Duke','Sadie','Tucker','Zoe','Oliver','Stella'][1 + (random() * 19)::INT],
+    (1 + (random() * 14)::INT)::INT,
+    random() > 0.5
+FROM range(10);
+
+SELECT count() AS seeded FROM my_catalog.concurrent_tbl;
+EOF
+
+echo ""
+echo "Done."

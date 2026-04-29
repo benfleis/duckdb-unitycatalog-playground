@@ -12,9 +12,9 @@ get started as follows. Assuming you have duckdb (>= v1.5.2) and uv, the followi
 ```sh
 git clone https://github.com/benfleis/duckdb-unitycatalog-playground.git
 cd duckdb-unitycatalog-playground
-uv venv && \
-    . .venv/bin/activate && \
-    uv pip install -r requirements.txt
+uv venv
+. .venv/bin/activate
+uv pip install -r requirements.txt
 scripts/run-delta
 ```
 
